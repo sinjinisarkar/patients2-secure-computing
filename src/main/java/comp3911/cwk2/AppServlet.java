@@ -26,7 +26,7 @@ import freemarker.template.TemplateExceptionHandler;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 
-// FIX FOR FLAW 2: import statement 
+// FIX FOR FLAW 2: new import statement added
 import java.sql.PreparedStatement; 
 
 @SuppressWarnings("serial")
@@ -34,12 +34,17 @@ public class AppServlet extends HttpServlet {
 
   private static final String CONNECTION_URL = "jdbc:sqlite:db.sqlite3";
 
-  // FIX FOR FLAW 2: PreparedStatement-compatible SQL
-  private static final String AUTH_QUERY   = "select * from user where username=? and password=?";
-  private static final String SEARCH_QUERY = "select * from patient where surname=? collate nocase";
+  // FIX FOR FLAW 2: changed the query constants to use ? placeholders 
+  private static final String AUTH_QUERY = "select * from user where username=? and password=?";
+  // FIX FOR FLAW 3: only return patients for the logged-in GP (gp_id = currentUserId)
+  private static final String SEARCH_QUERY = "select * from patient where surname=? collate nocase and gp_id=?";
+
 
   private final Configuration fm = new Configuration(Configuration.VERSION_2_3_28);
   private Connection database;
+
+  // FIX FOR FLAW 3: Tracks which GP is currently logged in, used for access control
+  private Integer currentUserId = null;
 
   @Override
   public void init() throws ServletException {
@@ -130,34 +135,42 @@ public class AppServlet extends HttpServlet {
     }
   }
 
-  // ----------------------------------------------------------
-  // FIX FOR FLAW 2 + integrated FLAW 1 hashing
-  // ----------------------------------------------------------
   private boolean authenticated(String username, String password) throws SQLException {
 
-    // FLAW 1: Hash the incoming password
+    // FIX FOR FLAW 1: Hash the incoming password
     String hashedPassword = hashPassword(password);
 
-    // FLAW 2: Use PreparedStatement
+    // FIX FOR FLAW 2: Use PreparedStatement
     try (PreparedStatement stmt = database.prepareStatement(AUTH_QUERY)) {
-        stmt.setString(1, username);
-        stmt.setString(2, hashedPassword);
+      stmt.setString(1, username);
+      stmt.setString(2, hashedPassword);
 
-        try (ResultSet results = stmt.executeQuery()) {
-            return results.next();
+      try (ResultSet results = stmt.executeQuery()) {
+        if (results.next()) {
+            // FIX FOR FLAW 3: remember which GP is logged in (their id from the user table)
+            currentUserId = results.getInt("id");  
+            return true;
+        } else {
+            currentUserId = null;
+            return false;
         }
+      }
     }
   }
 
   // ----------------------------------------------------------
-  // FIX FOR FLAW 2: PreparedStatement for search
+  // FIX FOR FLAW 2 + 3: PreparedStatement for search
+  // Replaced String.format() and raw SQL with PreparedStatement and parameter binding
+  // so that the surname and gp_id are treated as data, not executable SQL (Flaw 2 + 3).
   // ----------------------------------------------------------
   private List<Record> searchResults(String surname) throws SQLException {
     List<Record> records = new ArrayList<>();
 
     try (PreparedStatement stmt = database.prepareStatement(SEARCH_QUERY)) {
         stmt.setString(1, surname);
-
+        // 2nd parameter: logged-in GP's id (Flaw 3 fix)
+        stmt.setInt(2, currentUserId);
+        
         try (ResultSet results = stmt.executeQuery()) {
             while (results.next()) {
                 Record rec = new Record();
