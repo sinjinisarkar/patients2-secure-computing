@@ -56,7 +56,9 @@ public class AppServlet extends HttpServlet {
     try {
       fm.setDirectoryForTemplateLoading(new File("./templates"));
       fm.setDefaultEncoding("UTF-8");
-      fm.setTemplateExceptionHandler(TemplateExceptionHandler.HTML_DEBUG_HANDLER);
+
+      // FIX FOR FLAW 5: Prevent exposing internal Freemarker debug information
+      fm.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
       fm.setLogTemplateExceptions(false);
       fm.setWrapUncheckedExceptions(true);
     }
@@ -84,7 +86,9 @@ public class AppServlet extends HttpServlet {
       response.setStatus(HttpServletResponse.SC_OK);
     }
     catch (TemplateException error) {
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      // FIX FOR FLAW 5: Hide internal template errors from the user
+      response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      response.getWriter().write("Oops! Something went wrong while loading the page.");
     }
   }
 
@@ -111,7 +115,9 @@ public class AppServlet extends HttpServlet {
       response.setStatus(HttpServletResponse.SC_OK);
     }
     catch (Exception error) {
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      // FIX FOR FLAW 5: Prevent internal error details leaking to user
+      response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      response.getWriter().write("An internal error occurred. Please try again later.");
     }
   }
 
