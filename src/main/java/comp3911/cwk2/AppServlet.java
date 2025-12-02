@@ -94,23 +94,33 @@ public class AppServlet extends HttpServlet {
 
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
-   throws ServletException, IOException {
+      throws ServletException, IOException {
 
     String username = request.getParameter("username");
     String password = request.getParameter("password");
     String surname  = request.getParameter("surname");
 
     try {
-      if (authenticated(username, password)) {
+      // use authenticate() which returns user id instead of boolean
+      Integer userId = authenticated(username, password);
+
+      if (userId != null) {
+        // set currentUserId only when login succeeds
+        currentUserId = userId;
+
         Map<String, Object> model = new HashMap<>();
         model.put("records", searchResults(surname));
+
         Template template = fm.getTemplate("details.html");
         template.process(model, response.getWriter());
       }
       else {
+        currentUserId = null;
+
         Template template = fm.getTemplate("invalid.html");
         template.process(null, response.getWriter());
       }
+
       response.setContentType("text/html");
       response.setStatus(HttpServletResponse.SC_OK);
     }
@@ -141,7 +151,7 @@ public class AppServlet extends HttpServlet {
     }
   }
 
-  private boolean authenticated(String username, String password) throws SQLException {
+  private Integer authenticated(String username, String password) throws SQLException {
 
     // FIX FOR FLAW 1: Hash the incoming password
     String hashedPassword = hashPassword(password);
@@ -154,11 +164,9 @@ public class AppServlet extends HttpServlet {
       try (ResultSet results = stmt.executeQuery()) {
         if (results.next()) {
             // FIX FOR FLAW 3: remember which GP is logged in (their id from the user table)
-            currentUserId = results.getInt("id");  
-            return true;
+            return results.getInt("id");
         } else {
-            currentUserId = null;
-            return false;
+            return null;
         }
       }
     }
